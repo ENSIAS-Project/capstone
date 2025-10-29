@@ -1,11 +1,16 @@
-output "alb_dns_name" {
-  description = "DNS name of the Application Load Balancer"
-  value       = aws_lb.main.dns_name
-}
+# output "alb_dns_name" {
+#   description = "DNS name of the Application Load Balancer"
+#   value       = aws_lb.main.dns_name
+# }
 
-output "alb_url" {
-  description = "URL to access the web application"
-  value       = "http://${aws_lb.main.dns_name}"
+# output "alb_url" {
+#   description = "URL to access the web application"
+#   value       = "http://${aws_lb.main.dns_name}"
+# }
+
+output "instance_access_info" {
+  description = "Instructions to get instance public IPs"
+  value       = "Run: aws ec2 describe-instances --filters 'Name=tag:Name,Values=capstone-web-server' 'Name=instance-state-name,Values=running' --query 'Reservations[*].Instances[*].[PublicIpAddress]' --output text"
 }
 
 output "rds_endpoint" {

@@ -187,11 +187,19 @@ resource "aws_security_group" "web" {
   vpc_id      = aws_vpc.main.id
 
   ingress {
-    from_port       = 80
-    to_port         = 80
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-    description     = "Allow HTTP from ALB"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTP from anywhere"
+  }
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow SSH from anywhere"
   }
 
   egress {
@@ -293,53 +301,59 @@ resource "aws_db_instance" "main" {
   }
 }
 
-# Application Load Balancer
-resource "aws_lb" "main" {
-  name               = "capstone-alb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb.id]
-  subnets            = [aws_subnet.public_1.id, aws_subnet.public_2.id]
+# ============================================
+# ALB RESOURCES - COMMENTED OUT
+# AWS Academy account does not support ALB creation
+# Uncomment when ALB becomes available
+# ============================================
 
-  tags = {
-    Name = "capstone-alb"
-  }
-}
-
-# Target Group
-resource "aws_lb_target_group" "main" {
-  name     = "capstone-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
-
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
-    timeout             = 10
-    interval            = 30
-    path                = "/health.txt"
-    matcher             = "200"
-    port                = "traffic-port"
-  }
-
-  tags = {
-    Name = "capstone-tg"
-  }
-}
-
-# ALB Listener
-resource "aws_lb_listener" "main" {
-  load_balancer_arn = aws_lb.main.arn
-  port              = "80"
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.main.arn
-  }
-}
+# # Application Load Balancer
+# resource "aws_lb" "main" {
+#   name               = "capstone-alb"
+#   internal           = false
+#   load_balancer_type = "application"
+#   security_groups    = [aws_security_group.alb.id]
+#   subnets            = [aws_subnet.public_1.id, aws_subnet.public_2.id]
+#
+#   tags = {
+#     Name = "capstone-alb"
+#   }
+# }
+#
+# # Target Group
+# resource "aws_lb_target_group" "main" {
+#   name     = "capstone-tg"
+#   port     = 80
+#   protocol = "HTTP"
+#   vpc_id   = aws_vpc.main.id
+#
+#   health_check {
+#     enabled             = true
+#     healthy_threshold   = 2
+#     unhealthy_threshold = 3
+#     timeout             = 10
+#     interval            = 30
+#     path                = "/health.txt"
+#     matcher             = "200"
+#     port                = "traffic-port"
+#   }
+#
+#   tags = {
+#     Name = "capstone-tg"
+#   }
+# }
+#
+# # ALB Listener
+# resource "aws_lb_listener" "main" {
+#   load_balancer_arn = aws_lb.main.arn
+#   port              = "80"
+#   protocol          = "HTTP"
+#
+#   default_action {
+#     type             = "forward"
+#     target_group_arn = aws_lb_target_group.main.arn
+#   }
+# }
 
 # IAM Role for EC2 Instances
 resource "aws_iam_role" "ec2_role" {
@@ -417,12 +431,18 @@ resource "aws_launch_template" "web" {
   name_prefix   = "capstone-web-lt-"
   image_id      = data.aws_ami.amazon_linux_2023.id
   instance_type = var.instance_type
+  key_name      = "capstone-key"
 
   iam_instance_profile {
     name = aws_iam_instance_profile.ec2_profile.name
   }
 
-  vpc_security_group_ids = [aws_security_group.web.id]
+  network_interfaces {
+    associate_public_ip_address = true
+    device_index                = 0
+    security_groups             = [aws_security_group.web.id]
+    delete_on_termination       = true
+  }
 
   user_data = base64encode(templatefile("${path.module}/user-data.sh", {
     s3_bucket_name = var.s3_php_app_bucket
@@ -440,10 +460,9 @@ resource "aws_launch_template" "web" {
 # Auto Scaling Group
 resource "aws_autoscaling_group" "web" {
   name                      = "capstone-asg"
-  vpc_zone_identifier       = [aws_subnet.private_1.id, aws_subnet.private_2.id]
-  target_group_arns         = [aws_lb_target_group.main.arn]
-  health_check_type         = "ELB"
-  health_check_grace_period = 300
+  vpc_zone_identifier       = [aws_subnet.public_1.id, aws_subnet.public_2.id]
+  health_check_type         = "EC2"
+  health_check_grace_period = 400
   min_size                  = var.asg_min_size
   max_size                  = var.asg_max_size
   desired_capacity          = var.asg_desired_capacity

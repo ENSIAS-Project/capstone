@@ -2,7 +2,8 @@
 # User Data Script for Web Server Configuration
 # This script downloads and deploys the Example Social Research Organization PHP application from S3
 
-set -e  # Exit on error
+# Don't exit on error - we want to continue even if S3 download fails
+# set -e
 
 # Log output to file for troubleshooting
 exec > >(tee /var/log/user-data.log)
@@ -26,38 +27,77 @@ yum update -y
 
 # Install required packages
 echo "Step 2: Installing required packages..."
-yum install -y httpd php php-mysqli mysql git jq
+yum install -y httpd php php-mysqli mysql git jq curl
 
 # Start and enable Apache
 echo "Step 3: Starting Apache..."
 systemctl start httpd
 systemctl enable httpd
 
+# Verify Apache is running
+if systemctl is-active --quiet httpd; then
+    echo "✓ Apache is running"
+else
+    echo "✗ Apache failed to start"
+    systemctl status httpd --no-pager
+    exit 1
+fi
+
+# Create health check file IMMEDIATELY after Apache starts (for ALB health checks)
+echo "Step 4: Creating health check file..."
+mkdir -p /var/www/html
+echo "OK" > /var/www/html/health.txt
+chown apache:apache /var/www/html/health.txt
+chmod 644 /var/www/html/health.txt
+echo "✓ Health check file created at /var/www/html/health.txt"
+
+# Create a simple test page as fallback
+echo "Step 4b: Creating test index page..."
+cat > /var/www/html/test.html << 'EOFTEST'
+<!DOCTYPE html>
+<html>
+<head><title>Server Test</title></head>
+<body>
+<h1>Server is Running</h1>
+<p>This page confirms Apache is working correctly.</p>
+</body>
+</html>
+EOFTEST
+chown apache:apache /var/www/html/test.html
+
 # Install AWS CLI v2 if not present
 if ! command -v aws &> /dev/null; then
-    echo "Step 4: Installing AWS CLI v2..."
+    echo "Step 5: Installing AWS CLI v2..."
     cd /tmp
     curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
     unzip -q awscliv2.zip
     ./aws/install
     rm -rf aws awscliv2.zip
 else
-    echo "Step 4: AWS CLI already installed"
+    echo "Step 5: AWS CLI already installed"
 fi
 
 # Install Composer for AWS SDK
-echo "Step 5: Installing Composer..."
+echo "Step 6: Installing Composer..."
 cd /tmp
 curl -sS https://getcomposer.org/installer | php
 mv composer.phar /usr/local/bin/composer
 
 # Create web application directory
-echo "Step 6: Setting up web directory..."
+echo "Step 7: Setting up web directory..."
 cd /var/www/html
+# Remove default index.html but keep health.txt
 rm -f index.html
+# Ensure health.txt still exists
+if [ ! -f "health.txt" ]; then
+    echo "WARNING: health.txt was removed, recreating..."
+    echo "OK" > health.txt
+    chown apache:apache health.txt
+    chmod 644 health.txt
+fi
 
 # Install AWS SDK for PHP
-echo "Step 7: Installing AWS SDK for PHP..."
+echo "Step 8: Installing AWS SDK for PHP..."
 cat > composer.json << 'EOFCOMPOSER'
 {
     "require": {
@@ -76,15 +116,16 @@ require '/var/www/html/vendor/autoload.php';
 EOFAUTOLOAD
 
 # Download PHP application files from S3
-echo "Step 8: Downloading PHP application files from S3..."
+echo "Step 9: Downloading PHP application files from S3..."
 if [ -n "$S3_BUCKET" ]; then
     echo "Downloading from s3://$S3_BUCKET/php-app/..."
 
-    # Download all PHP files
+    # Download all PHP files (exclude health.txt to preserve it)
     aws s3 sync s3://$S3_BUCKET/php-app/ /var/www/html/ \
         --region $AWS_REGION \
         --exclude "*.md" \
-        --exclude ".DS_Store"
+        --exclude ".DS_Store" \
+        --exclude "health.txt"
 
     if [ $? -eq 0 ]; then
         echo "✓ PHP application files downloaded successfully"
@@ -130,7 +171,7 @@ EOFHTML
 fi
 
 # Verify critical files exist
-echo "Step 9: Verifying PHP files..."
+echo "Step 10: Verifying PHP files..."
 REQUIRED_FILES=("index.php" "query.php" "query2.php" "get-parameters.php" "Logo.png" "Shirley.jpeg")
 MISSING_FILES=()
 
@@ -148,7 +189,7 @@ if [ $${#MISSING_FILES[@]} -gt 0 ]; then
 fi
 
 # Create CSS directory if it doesn't exist
-echo "Step 10: Setting up CSS directory..."
+echo "Step 11: Setting up CSS directory..."
 mkdir -p /var/www/html/css
 
 # Check if styles.css exists, if not create a basic one
@@ -218,20 +259,39 @@ EOFCSS
 fi
 
 # Set proper permissions
-echo "Step 11: Setting permissions..."
+echo "Step 12: Setting permissions..."
 chown -R apache:apache /var/www/html
 chmod -R 755 /var/www/html
 
 # Restart Apache to ensure all changes take effect
-echo "Step 12: Restarting Apache..."
+echo "Step 13: Restarting Apache..."
 systemctl restart httpd
 
-# Create health check file for ALB
-echo "Step 13: Creating health check file..."
-echo "OK" > /var/www/html/health.txt
+# Ensure health check file still exists and is accessible
+echo "Step 14: Verifying health check file..."
+if [ -f "/var/www/html/health.txt" ]; then
+    echo "✓ Health check file exists"
+    ls -lh /var/www/html/health.txt
+else
+    echo "✗ Health check file missing - recreating..."
+    echo "OK" > /var/www/html/health.txt
+    chown apache:apache /var/www/html/health.txt
+    chmod 644 /var/www/html/health.txt
+fi
+
+# Test health check endpoint locally
+echo "Step 14b: Testing health check endpoint..."
+HEALTH_CHECK=$(curl -s -o /dev/null -w "%%{http_code}" http://localhost/health.txt)
+if [ "$HEALTH_CHECK" == "200" ]; then
+    echo "✓ Health check endpoint responding with HTTP 200"
+else
+    echo "✗ Health check endpoint returned HTTP $HEALTH_CHECK"
+    echo "Debugging information:"
+    curl -v http://localhost/health.txt
+fi
 
 # Test Apache configuration
-echo "Step 14: Testing Apache configuration..."
+echo "Step 15: Testing Apache configuration..."
 httpd -t
 
 # Display final status

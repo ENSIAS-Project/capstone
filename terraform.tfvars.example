@@ -1,0 +1,26 @@
+# Terraform Variables Configuration Template
+# Copy this file to terraform.tfvars and customize the values
+# NEVER commit terraform.tfvars to version control!
+
+# To use: cp terraform.tfvars.example terraform.tfvars
+
+aws_region = "us-east-1"
+environment = "production"
+
+# Database Configuration
+db_name           = "country_schema"
+db_username       = "admin"  # Change this in production!
+db_instance_class = "db.t3.micro"
+
+# EC2 Configuration
+instance_type = "t3.micro"
+
+# Auto Scaling Configuration
+asg_min_size         = 2
+asg_max_size         = 4
+asg_desired_capacity = 2
+
+# S3 Configuration
+# IMPORTANT: Upload PHP files to S3 first using: ./upload-to-s3.sh
+# The script will automatically update terraform.tfvars with the bucket name
+s3_php_app_bucket = ""  # Will be set by upload-to-s3.sh script

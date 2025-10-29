@@ -36,5 +36,12 @@ terraform.rc
 # Ignore any SQL dump files with sensitive data
 *.sql
 
+# Ignore S3 bucket name file created by upload script
+.s3-bucket-name
+
+# Ignore backup files
+*.bak
+*.backup
+
 # Ignore lock file (optional - some teams commit this)
 # .terraform.lock.hcl

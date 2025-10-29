@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm:*)",
+      "Bash(ls:*)",
+      "Bash(git rm:*)",
+      "Bash(terraform output:*)",
+      "Bash(aws autoscaling describe-auto-scaling-groups:*)",
+      "Bash(aws elbv2 describe-target-groups:*)",
+      "Bash(aws elbv2 describe-target-health:*)",
+      "Bash(aws ec2:*)",
+      "Bash(aws ssm send-command:*)",
+      "Bash(terraform apply:*)",
+      "Bash(aws autoscaling start-instance-refresh:*)",
+      "Bash(aws autoscaling describe-instance-refreshes:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

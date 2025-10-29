@@ -31,7 +31,7 @@ variable "db_instance_class" {
 variable "instance_type" {
   description = "EC2 instance type for web servers"
   type        = string
-  default     = "t2.micro"
+  default     = "t3.micro"
 }
 
 variable "asg_min_size" {

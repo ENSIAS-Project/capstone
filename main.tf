@@ -316,11 +316,12 @@ resource "aws_lb_target_group" "main" {
   health_check {
     enabled             = true
     healthy_threshold   = 2
-    unhealthy_threshold = 2
-    timeout             = 5
+    unhealthy_threshold = 3
+    timeout             = 10
     interval            = 30
-    path                = "/"
+    path                = "/health.txt"
     matcher             = "200"
+    port                = "traffic-port"
   }
 
   tags = {
@@ -438,14 +439,14 @@ resource "aws_launch_template" "web" {
 
 # Auto Scaling Group
 resource "aws_autoscaling_group" "web" {
-  name                = "capstone-asg"
-  vpc_zone_identifier = [aws_subnet.private_1.id, aws_subnet.private_2.id]
-  target_group_arns   = [aws_lb_target_group.main.arn]
-  health_check_type   = "ELB"
+  name                      = "capstone-asg"
+  vpc_zone_identifier       = [aws_subnet.private_1.id, aws_subnet.private_2.id]
+  target_group_arns         = [aws_lb_target_group.main.arn]
+  health_check_type         = "ELB"
   health_check_grace_period = 300
-  min_size            = var.asg_min_size
-  max_size            = var.asg_max_size
-  desired_capacity    = var.asg_desired_capacity
+  min_size                  = var.asg_min_size
+  max_size                  = var.asg_max_size
+  desired_capacity          = var.asg_desired_capacity
 
   launch_template {
     id      = aws_launch_template.web.id

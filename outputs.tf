@@ -8,9 +8,14 @@
 #   value       = "http://${aws_lb.main.dns_name}"
 # }
 
-output "instance_access_info" {
-  description = "Instructions to get instance public IPs"
-  value       = "Run: aws ec2 describe-instances --filters 'Name=tag:Name,Values=capstone-web-server' 'Name=instance-state-name,Values=running' --query 'Reservations[*].Instances[*].[PublicIpAddress]' --output text"
+output "instance_public_ips" {
+  description = "Public IP addresses of running instances"
+  value       = data.aws_instances.web_servers.public_ips
+}
+
+output "instance_public_urls" {
+  description = "Public URLs to access the web application (for DAST scanning)"
+  value       = [for ip in data.aws_instances.web_servers.public_ips : "http://${ip}"]
 }
 
 output "rds_endpoint" {

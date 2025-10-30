@@ -19,3 +19,18 @@ data "aws_ami" "amazon_linux_2023" {
     values = ["hvm"]
   }
 }
+
+# Data source to get running web server instances for outputs
+data "aws_instances" "web_servers" {
+  filter {
+    name   = "tag:Name"
+    values = ["capstone-web-server"]
+  }
+
+  filter {
+    name   = "instance-state-name"
+    values = ["running"]
+  }
+
+  depends_on = [aws_autoscaling_group.web]
+}

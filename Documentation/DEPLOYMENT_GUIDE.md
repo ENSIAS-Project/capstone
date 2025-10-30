@@ -84,7 +84,7 @@ A section on adding an ALB is included at the end for when your AWS account is f
                   (PHP Application)
 ```
 
-### Infrastructure Components
+### Infrastructure Components:
 
 #### Networking
 - **1 VPC** (10.0.0.0/16)

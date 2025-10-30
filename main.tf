@@ -399,7 +399,7 @@ resource "aws_iam_role_policy" "secrets_manager_policy" {
         Action = [
           "rds:DescribeDBInstances"
         ]
-        Resource = "*"
+        Resource = aws_db_instance.main.arn
       }
     ]
   })

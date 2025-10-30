@@ -30,7 +30,12 @@
       "Bash(terraform refresh:*)",
       "Bash(aws autoscaling update-auto-scaling-group:*)",
       "Bash(aws autoscaling detach-load-balancer-target-groups:*)",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "Bash(aws secretsmanager get-secret-value:*)",
+      "Bash(cat:*)",
+      "Bash(aws s3 cp:*)",
+      "WebFetch(domain:medium.com)",
+      "WebSearch"
     ],
     "deny": [],
     "ask": []

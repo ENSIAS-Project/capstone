@@ -254,8 +254,9 @@ resource "aws_db_subnet_group" "main" {
 
 # Random password for RDS
 resource "random_password" "db_password" {
-  length  = 16
-  special = true
+  length           = 16
+  special          = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"
 }
 
 # Secrets Manager Secret for DB Credentials
@@ -392,6 +393,13 @@ resource "aws_iam_role_policy" "secrets_manager_policy" {
           "secretsmanager:DescribeSecret"
         ]
         Resource = aws_secretsmanager_secret.db_credentials.arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "rds:DescribeDBInstances"
+        ]
+        Resource = "*"
       }
     ]
   })

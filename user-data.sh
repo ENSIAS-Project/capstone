@@ -25,9 +25,25 @@ echo "Region: $AWS_REGION"
 echo "Step 1: Updating system..."
 yum update -y
 
-# Install required packages
-echo "Step 2: Installing required packages..."
-yum install -y httpd php php-mysqli mysql git jq curl
+# Install required packages with PHP 8.x
+echo "Step 2: Installing required packages with PHP 8..."
+
+# For Amazon Linux 2, enable PHP 8.1 from amazon-linux-extras
+echo "Enabling PHP 8.1 from amazon-linux-extras..."
+amazon-linux-extras enable php8.1
+
+# Clean yum cache to ensure we get latest packages
+yum clean metadata
+
+# Install Apache and PHP 8.1 with required extensions
+yum install -y httpd php php-mysqlnd php-xml php-mbstring php-zip php-json php-curl php-cli php-process php-gd
+
+# Install other required packages
+yum install -y mysql git jq curl unzip wget
+
+# Verify PHP version
+echo "Installed PHP version:"
+php -v
 
 # Start and enable Apache
 echo "Step 3: Starting Apache..."
@@ -77,14 +93,8 @@ else
     echo "Step 5: AWS CLI already installed"
 fi
 
-# Install Composer for AWS SDK
-echo "Step 6: Installing Composer..."
-cd /tmp
-curl -sS https://getcomposer.org/installer | php
-mv composer.phar /usr/local/bin/composer
-
 # Create web application directory
-echo "Step 7: Setting up web directory..."
+echo "Step 6: Setting up web directory..."
 cd /var/www/html
 # Remove default index.html but keep health.txt
 rm -f index.html
@@ -96,8 +106,37 @@ if [ ! -f "health.txt" ]; then
     chmod 644 health.txt
 fi
 
+# Install Composer for AWS SDK
+echo "Step 7: Installing Composer..."
+cd /var/www/html
+export COMPOSER_HOME=/var/www/html
+export COMPOSER_ALLOW_SUPERUSER=1
+
+# Download and install Composer with better error handling
+echo "Downloading Composer installer..."
+php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+
+if [ -f "composer-setup.php" ]; then
+    echo "Running Composer installer..."
+    php composer-setup.php --install-dir=/usr/local/bin --filename=composer
+    rm composer-setup.php
+
+    if [ -f "/usr/local/bin/composer" ]; then
+        chmod +x /usr/local/bin/composer
+        echo "✓ Composer installed successfully"
+        /usr/local/bin/composer --version
+    else
+        echo "✗ Composer installation failed"
+    fi
+else
+    echo "✗ Failed to download Composer installer"
+fi
+
 # Install AWS SDK for PHP
 echo "Step 8: Installing AWS SDK for PHP..."
+cd /var/www/html
+
+# Create composer.json
 cat > composer.json << 'EOFCOMPOSER'
 {
     "require": {
@@ -106,7 +145,36 @@ cat > composer.json << 'EOFCOMPOSER'
 }
 EOFCOMPOSER
 
-composer install --no-dev --quiet
+echo "Installing AWS SDK via Composer..."
+if [ -f "/usr/local/bin/composer" ]; then
+    # Run composer install with proper error handling
+    /usr/local/bin/composer install --no-dev --optimize-autoloader --no-interaction 2>&1 | tee /tmp/composer-install.log
+
+    # Check if vendor directory was created
+    if [ -d "/var/www/html/vendor" ] && [ -d "/var/www/html/vendor/aws" ]; then
+        echo "✓ AWS SDK installed successfully"
+        ls -la /var/www/html/vendor/aws/ | head -5
+    else
+        echo "✗ AWS SDK installation failed"
+        echo "Composer install log:"
+        cat /tmp/composer-install.log
+
+        # Try alternative installation method - direct download
+        echo "Attempting alternative installation..."
+        mkdir -p /var/www/html/vendor/aws
+        cd /var/www/html/vendor
+        wget https://github.com/aws/aws-sdk-php/releases/download/3.316.2/aws.zip
+        unzip -q aws.zip
+        rm aws.zip
+    fi
+else
+    echo "✗ Composer not found, using alternative AWS SDK installation"
+    mkdir -p /var/www/html/vendor/aws
+    cd /var/www/html/vendor
+    wget https://github.com/aws/aws-sdk-php/releases/download/3.316.2/aws.zip
+    unzip -q aws.zip
+    rm aws.zip
+fi
 
 # Create aws-autoloader.php (referenced by get-parameters.php)
 cat > aws-autoloader.php << 'EOFAUTOLOAD'
@@ -117,6 +185,7 @@ EOFAUTOLOAD
 
 # Download PHP application files from S3
 echo "Step 9: Downloading PHP application files from S3..."
+cd /var/www/html
 if [ -n "$S3_BUCKET" ]; then
     echo "Downloading from s3://$S3_BUCKET/php-app/..."
 
@@ -256,6 +325,77 @@ h1, h2, h3 {
     color: #2c3e50;
 }
 EOFCSS
+fi
+
+# Import database
+echo "Step 11.5: Importing database from S3..."
+if [ -n "$S3_BUCKET" ]; then
+    # Download countries.sql from S3
+    aws s3 cp s3://$S3_BUCKET/countries.sql /tmp/countries.sql --region $AWS_REGION
+
+    if [ $? -eq 0 ]; then
+        echo "✓ countries.sql downloaded successfully"
+
+        # Get database credentials from Secrets Manager
+        echo "Retrieving database credentials..."
+        SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id capstone-db-credentials \
+            --region $AWS_REGION \
+            --query SecretString \
+            --output text)
+
+        if [ $? -eq 0 ]; then
+            DB_HOST=$(echo $SECRET | jq -r '.host')
+            DB_USER=$(echo $SECRET | jq -r '.username')
+            DB_PASS=$(echo $SECRET | jq -r '.password')
+            DB_NAME=$(echo $SECRET | jq -r '.dbname')
+
+            echo "Database Host: $DB_HOST"
+            echo "Database Name: $DB_NAME"
+
+            # Wait for RDS to be available (max 5 minutes)
+            echo "Waiting for database to be available..."
+            RETRY_COUNT=0
+            MAX_RETRIES=30
+            while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                if mysql -h $DB_HOST -u $DB_USER -p$DB_PASS -e "SELECT 1" > /dev/null 2>&1; then
+                    echo "✓ Database connection successful"
+                    break
+                else
+                    echo "Waiting for database... (attempt $((RETRY_COUNT+1))/$MAX_RETRIES)"
+                    sleep 10
+                    RETRY_COUNT=$((RETRY_COUNT+1))
+                fi
+            done
+
+            if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+                echo "✗ Database connection timeout"
+            else
+                # Import the database
+                echo "Importing countries data..."
+                mysql -h $DB_HOST -u $DB_USER -p$DB_PASS $DB_NAME < /tmp/countries.sql
+
+                if [ $? -eq 0 ]; then
+                    echo "✓ Database imported successfully"
+
+                    # Verify import
+                    COUNTRY_COUNT=$(mysql -h $DB_HOST -u $DB_USER -p$DB_PASS -N -e "USE $DB_NAME; SELECT COUNT(*) FROM countrydata_final;")
+                    echo "✓ Imported $COUNTRY_COUNT countries"
+                else
+                    echo "✗ Database import failed"
+                fi
+            fi
+        else
+            echo "✗ Failed to retrieve database credentials from Secrets Manager"
+        fi
+
+        # Clean up
+        rm -f /tmp/countries.sql
+    else
+        echo "✗ Failed to download countries.sql from S3"
+    fi
+else
+    echo "✗ S3_BUCKET not set, skipping database import"
 fi
 
 # Set proper permissions

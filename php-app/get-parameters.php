@@ -1,7 +1,7 @@
 <?php
         # Retrieve settings from Parameter Store
         error_log('Retrieving settings');
-        require 'aws-autoloader.php';
+        require '/var/www/html/vendor/autoload.php';
       
         #$az = file_get_contents('http://169.254.169.254/latest/meta-data/placement/availability-zone');
 
@@ -52,13 +52,9 @@
         #echo $ep;
         #
         #fetch secrets for the endpoint
-        $secretresults = $secrets_client->listSecrets(array(
-          ['Key'=>['name'],
-          'Values'=>['rds!']
-          ])
-          );
+        # Using our specific secret name instead of searching
           $result = $secrets_client->getSecretValue([
-            'SecretId' => $secretresults['SecretList'][0]['Name'],
+            'SecretId' => 'capstone-db-credentials',
         ]);
         $result = $result['SecretString'];
         $result = json_decode($result, true);
@@ -69,7 +65,7 @@
         #$result = json_decode($result, true);
         $un = $result['username'];
         $pw = $result['password'];
-        $db = 'countries';
+        $db = 'country_schema';
 
         }
         catch (Exception $e) {

@@ -252,7 +252,7 @@ resource "aws_db_subnet_group" "main" {
   }
 }
 
-# Random password for RDS
+# Random password for RDS 
 resource "random_password" "db_password" {
   length           = 16
   special          = true

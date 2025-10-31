@@ -35,7 +35,9 @@
       "Bash(cat:*)",
       "Bash(aws s3 cp:*)",
       "WebFetch(domain:medium.com)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(git log:*)",
+      "Bash(terraform init:*)"
     ],
     "deny": [],
     "ask": []

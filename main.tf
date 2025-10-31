@@ -1,5 +1,22 @@
 # Main Terraform Configuration for AWS Academy Capstone Project
 
+# SSH Key Pair for EC2 Instances
+resource "tls_private_key" "capstone_key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "aws_key_pair" "capstone_key" {
+  key_name   = "capstone-key"
+  public_key = tls_private_key.capstone_key.public_key_openssh
+}
+
+resource "local_file" "private_key" {
+  content         = tls_private_key.capstone_key.private_key_pem
+  filename        = "${path.module}/capstone-key.pem"
+  file_permission = "0400"
+}
+
 # VPC Configuration
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
@@ -439,7 +456,7 @@ resource "aws_launch_template" "web" {
   name_prefix   = "capstone-web-lt-"
   image_id      = data.aws_ami.amazon_linux_2023.id
   instance_type = var.instance_type
-  key_name      = "capstone-key"
+  key_name      = aws_key_pair.capstone_key.key_name
 
   iam_instance_profile {
     name = aws_iam_instance_profile.ec2_profile.name

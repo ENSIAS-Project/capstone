@@ -1,984 +1,979 @@
-# Complete Guide - AWS Capstone Terraform Infrastructure
+# AWS Capstone Infrastructure - Country Data Web Application
 
-**Version:** 2.1
-**Last Updated:** November 6, 2025
-**Author:** Terraform-managed AWS Infrastructure
-
----
-
+A production-ready, highly available web application infrastructure deployed on AWS using Terraform Infrastructure as Code (IaC). This project demonstrates best practices in cloud architecture, security, and automation.
 
 ## Table of Contents
 
-1. [Architecture Overview](#1-architecture-overview)
-2. [Prerequisites](#2-prerequisites)
-3. [Resource Verification Commands](#3-resource-verification-commands)
-4. [File-by-File Documentation](#4-file-by-file-documentation)
-5. [Deployment Instructions](#5-deployment-instructions)
-6. [Database Setup](#6-database-setup)
-7. [Application Deployment](#7-application-deployment)
-8. [Troubleshooting](#8-troubleshooting)
-9. [Cost Optimization](#9-cost-optimization)
-10. [Security Best Practices](#10-security-best-practices)
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Infrastructure Components](#infrastructure-components)
+- [Project Structure](#project-structure)
+- [Application Details](#application-details)
+- [Deployment Guide](#deployment-guide)
+- [How It Works](#how-it-works)
+- [Security](#security)
+- [Cost Analysis](#cost-analysis)
+- [Maintenance and Operations](#maintenance-and-operations)
+- [Implementation Notes](#implementation-notes)
 
 ---
 
-## 1. Architecture Overview
+## Overview
 
-### 1.1 High-Level Architecture
+This project implements a scalable, secure PHP web application that displays country statistics from a MySQL database. The infrastructure follows AWS Well-Architected Framework principles and includes:
 
-This infrastructure deploys a **production-grade, highly available PHP web application** on AWS with the following components:
+- **Multi-AZ deployment** for high availability
+- **Auto Scaling** with 2-4 EC2 instances based on CPU utilization
+- **Application Load Balancer** for traffic distribution
+- **Private subnets** for compute resources with NAT Gateway for internet access
+- **RDS MySQL** in isolated database subnets
+- **Secrets Manager** for secure credential management
+- **Infrastructure as Code** using Terraform for reproducibility
 
-```
-                                    ┌─────────────────┐
-                                    │   Internet      │
-                                    └────────┬────────┘
-                                             │
-                                    ┌────────▼────────┐
-                                    │ Internet Gateway│
-                                    └────────┬────────┘
-                                             │
-                 ┌───────────────────────────┴───────────────────────────┐
-                 │                                                       │
-        ┌────────▼────────┐                                   ┌─────────▼────────┐
-        │ Public Subnet 1 │                                   │ Public Subnet 2  │
-        │   10.0.1.0/24   │                                   │   10.0.2.0/24    │
-        │   (us-east-1a)  │                                   │   (us-east-1b)   │
-        └────────┬────────┘                                   └─────────┬────────┘
-                 │                                                       │
-        ┌────────▼────────┐                                   ┌─────────▼────────┐
-        │  EC2 Instance 1 │                                   │  EC2 Instance 2  │
-        │  (Auto Scaling) │                                   │  (Auto Scaling)  │
-        │  98.92.143.68   │                                   │  54.165.28.132   │
-        └────────┬────────┘                                   └─────────┬────────┘
-                 │                                                       │
-                 └───────────────────────────┬───────────────────────────┘
-                                             │
-                                    ┌────────▼────────┐
-                                    │  NAT Gateway    │
-                                    │  (98.95.22.13)  │
-                                    └────────┬────────┘
-                                             │
-                 ┌───────────────────────────┴───────────────────────────┐
-                 │                                                       │
-        ┌────────▼────────┐                                   ┌─────────▼────────┐
-        │  DB Subnet 1    │                                   │  DB Subnet 2     │
-        │  10.0.21.0/24   │                                   │  10.0.22.0/24    │
-        │  (us-east-1a)   │                                   │  (us-east-1b)    │
-        └────────┬────────┘                                   └─────────┬────────┘
-                 │                                                       │
-                 └───────────────────────────┬───────────────────────────┘
-                                             │
-                                    ┌────────▼────────────────────┐
-                                    │    RDS MySQL Database       │
-                                    │  Multi-AZ (Standby Ready)   │
-                                    │  capstone-mysql-db          │
-                                    └─────────────────────────────┘
+### Key Features
 
-        ┌─────────────────────────────────────────────────────────────┐
-        │                  Supporting Services                        │
-        ├─────────────────────────────────────────────────────────────┤
-        │  • AWS Secrets Manager (DB Credentials)                     │
-        │  • S3 Bucket (PHP Application Files)                        │
-        │  • IAM Roles & Policies (EC2 Access Control)                │
-        │  • Security Groups (Network Firewall Rules)                 │
-        │  • Auto Scaling Group (2-4 instances)                       │
-        └─────────────────────────────────────────────────────────────┘
-```
-
-### 1.2 Why This Architecture is Solid
-
-This architecture follows AWS best practices and demonstrates enterprise-grade design:
-
-#### **High Availability**
-- **Multi-AZ Deployment:** Resources span 2 availability zones (us-east-1a and us-east-1b) to ensure zero downtime if one AZ fails
-- **Auto Scaling Group:** Automatically maintains 2-4 instances, replacing unhealthy instances within minutes
-- **RDS Multi-AZ Ready:** Database subnet group configured across 2 AZs for automatic failover capability
-
-#### **Security**
-- **Defense in Depth:** Multiple layers of security (Security Groups, IAM, Secrets Manager)
-- **Least Privilege IAM:** EC2 instances only have permissions for specific resources (Secrets Manager, S3)
-- **Network Segmentation:** Separate subnets for web, database, and public access with strict security group rules
-- **Secrets Management:** Database credentials stored in AWS Secrets Manager, never hardcoded
-- **Private Database:** RDS in private subnets, only accessible from web tier security group
-
-#### **Scalability**
-- **Auto Scaling:** CPU-based scaling policy (target 50% CPU) automatically adds/removes instances
-- **Stateless Application:** PHP app can scale horizontally without session issues
-- **Load Balancer Ready:** Infrastructure prepared for ALB addition when needed
-
-#### **Cost Optimization**
-- **Right-Sized Instances:** t3.micro instances with burstable CPU for variable workloads
-- **NAT Gateway Sharing:** Single NAT Gateway shared across both AZs (development mode)
-- **S3 for Static Assets:** PHP files stored in S3, reducing instance storage costs
-
-#### **Operational Excellence**
-- **Infrastructure as Code:** Entire infrastructure defined in Terraform for reproducibility
-- **Automated Provisioning:** User-data script fully automates instance configuration
-- **Monitoring Ready:** CloudWatch integration built-in for all resources
-- **Easy Recovery:** Terraform state enables quick disaster recovery
+- ✅ Zero-downtime deployments via Auto Scaling
+- ✅ Defense-in-depth security architecture
+- ✅ Automated instance provisioning
+- ✅ Centralized credential management
+- ✅ Multi-AZ fault tolerance
+- ✅ Horizontal scaling capability
 
 ---
 
-## 2. Prerequisites
+## Architecture
 
-### 2.1 Required Tools
+### High-Level Design
 
-```bash
-# Check if tools are installed
-terraform --version    # Required: >= 1.0
-aws --version          # Required: AWS CLI v2
-mysql --version        # Required for database import
-jq --version          # Required for JSON parsing
-```
+The diagram below shows the high-level architecture described in this document.
 
-### 2.2 AWS Credentials
+![High-level architecture diagram showing VPC, public/private/database subnets, ALB, Auto Scaling EC2 fleet, NAT Gateway, and RDS MySQL](Arhitecture.png)
 
-Ensure AWS credentials are configured:
----
-- Preserves health.txt file
-- Creates fallback HTML if S3 fails
+*Figure: High-level architecture for the Country Data Web Application*
+### Network Architecture
 
-**Step 10: File Verification (Lines 243-259)**
-    
-- **Query Results:** Tables with country data
+**VPC:** 10.0.0.0/16
 
----
+| Subnet Type | CIDR | AZ | Purpose |
+|-------------|------|-----|---------|
+| Public 1 | 10.0.1.0/24 | us-east-1a | ALB, NAT Gateway |
+| Public 2 | 10.0.2.0/24 | us-east-1b | ALB (Multi-AZ) |
+| Private 1 | 10.0.11.0/24 | us-east-1a | EC2 Web Servers |
+| Private 2 | 10.0.12.0/24 | us-east-1b | EC2 Web Servers |
+| Database 1 | 10.0.21.0/24 | us-east-1a | RDS MySQL |
+| Database 2 | 10.0.22.0/24 | us-east-1b | RDS Subnet Group |
 
-### 5.2 Updating Existing Infrastructure
+### Traffic Flow
 
-**Scenario:** You made changes to Terraform configuration or PHP files.
+1. **User Request** → Internet Gateway (HTTP:80)
+2. **Internet Gateway** → Application Load Balancer
+3. **ALB** → Target Group → EC2 Instances (Private IPs)
+4. **EC2 Instances** → RDS MySQL (Port 3306)
+5. **EC2 Instances** → NAT Gateway → Internet (S3, Secrets Manager, Updates)
 
-**Update Terraform Resources:**
-```bash
-terraform plan
-terraform apply
-```
+### Why This Architecture?
 
-**Update PHP Application:**
-```bash
-# 1. Update files in php-app/
-vim php-app/get-parameters.php
-
-# 2. Upload to S3
-aws s3 sync php-app/ s3://capstone-php-app-1761693785/php-app/ --region us-east-1
-
-# 3. Refresh instances (forces re-download)
-# Option A: Terminate instances (ASG will create new ones)
-aws autoscaling set-desired-capacity \
-  --auto-scaling-group-name capstone-asg \
-  --desired-capacity 0 \
-  --region us-east-1
-
-# Wait 30 seconds, then restore
-aws autoscaling set-desired-capacity \
-  --auto-scaling-group-name capstone-asg \
-  --desired-capacity 2 \
-  --region us-east-1
-
-# Option B: Manually update on each instance
-ssh -i capstone-key.pem ec2-user@98.92.143.68
-sudo aws s3 cp s3://capstone-php-app-1761693785/php-app/get-parameters.php /var/www/html/get-parameters.php --region us-east-1
-sudo chown apache:apache /var/www/html/get-parameters.php
-sudo systemctl restart httpd
-```
+- **Security**: EC2 instances have no public IPs, accessible only through ALB
+- **High Availability**: Multi-AZ deployment ensures fault tolerance
+- **Scalability**: Auto Scaling adjusts capacity based on demand
+- **Cost Efficiency**: Pay only for resources used, scale down during low traffic
+- **Maintainability**: Infrastructure as Code enables version control and reproducibility
 
 ---
 
-## 6. Database Setup
+## Infrastructure Components
 
-### 6.1 Automatic Import (via user-data.sh)
+### Networking Layer
 
-The database is automatically imported during EC2 instance launch. The `user-data.sh` script handles:
-1. Downloading `countries.sql` from S3
-2. Retrieving credentials from Secrets Manager
-3. Waiting for RDS to be available (up to 5 minutes)
-4. Importing the schema and data
-5. Verifying the import (231 countries)
+#### VPC (Virtual Private Cloud)
+- **CIDR Block**: 10.0.0.0/16
+- **DNS Support**: Enabled
+- **DNS Hostnames**: Enabled
+- **Purpose**: Isolated network environment for all resources
 
-**Prerequisites:**
-- `countries.sql` must be uploaded to S3 bucket root:
-```bash
-aws s3 cp countries.sql s3://capstone-php-app-1761693785/ --region us-east-1
-```
+#### Internet Gateway
+- **Attached to**: VPC
+- **Purpose**: Provides internet connectivity to public subnets
+- **Route**: 0.0.0.0/0 → Internet
 
-**Verify automatic import:**
-```bash
-# SSH to instance
-ssh -i capstone-key.pem ec2-user@98.92.143.68
+#### NAT Gateway
+- **Location**: Public Subnet 1 (us-east-1a)
+- **Elastic IP**: Assigned
+- **Purpose**: Enables private subnet instances to access internet for updates and AWS services
+- **Use Cases**: S3 access, Secrets Manager, package downloads, AWS APIs
 
-# Check logs
-sudo cat /var/log/user-data.log | grep -A 20 "Importing database"
-```
+#### Route Tables
 
-Expected output:
-```
-Importing countries data...
-✓ Database imported successfully
-✓ Imported 231 countries
-```
+**Public Route Table**:
+- Route: 0.0.0.0/0 → Internet Gateway
+- Associated with: Public Subnets 1 & 2
 
----
+**Private Route Table**:
+- Route: 0.0.0.0/0 → NAT Gateway
+- Associated with: Private Subnets 1 & 2
 
-### 6.2 Manual Import
+### Application Layer
 
-In this capstone project, the database was imported manually following these steps. You can do the same:
+#### Application Load Balancer
+- **Type**: Application (Layer 7)
+- **Scheme**: Internet-facing
+- **Subnets**: Public Subnet 1 & 2 (Multi-AZ)
+- **Listener**: HTTP:80
+- **Health Checks**: Every 30 seconds on path "/"
+- **Features**: Cross-zone load balancing, connection draining
 
-**Step 1: Get Database Credentials**
-```bash
-# Get RDS endpoint
-RDS_HOST=$(terraform output -raw rds_address)
+#### Target Group
+- **Protocol**: HTTP
+- **Port**: 80
+- **Health Check Path**: /
+- **Health Check Interval**: 30 seconds
+- **Healthy Threshold**: 2 consecutive successes
+- **Unhealthy Threshold**: 2 consecutive failures
+- **Timeout**: 5 seconds
 
-# Get password from Secrets Manager
-DB_PASS=$(aws secretsmanager get-secret-value \
-  --secret-id capstone-db-credentials \
-  --region us-east-1 \
-  --query SecretString \
-  --output text | jq -r '.password')
+#### Auto Scaling Group
+- **Min Size**: 2 instances
+- **Max Size**: 4 instances
+- **Desired Capacity**: 2 instances
+- **Subnets**: Private Subnets 1 & 2
+- **Health Check**: ELB (Load Balancer health checks)
+- **Grace Period**: 400 seconds
+- **Scaling Policy**: Target tracking at 50% CPU utilization
 
-echo "Host: $RDS_HOST"
-echo "Password: $DB_PASS"
-```
+#### Launch Template
+- **AMI**: Amazon Linux 2023 (Latest)
+- **Instance Type**: t3.micro (2 vCPU, 1 GiB RAM)
+- **Key Pair**: Auto-generated RSA 4096-bit
+- **Network**: Private subnets, no public IP
+- **IAM Role**: EC2 instance profile attached
+- **User Data**: Bootstrap script for automated setup
 
-**Step 2: Import Database**
-```bash
-mysql -h $RDS_HOST -u admin -p$DB_PASS country_schema < countries.sql
-```
+### Database Layer
 
-**Step 3: Verify Import**
-```bash
-mysql -h $RDS_HOST -u admin -p$DB_PASS country_schema \
-  -e "SELECT COUNT(*) as total_countries FROM countrydata_final;"
-```
+#### RDS MySQL
+- **Engine**: MySQL 8.0
+- **Instance Class**: db.t3.micro
+- **Storage**: 20 GB General Purpose SSD (GP2)
+- **Multi-AZ**: Single-AZ deployment
+- **Subnets**: DB Subnet Group (spans both AZs)
+- **Publicly Accessible**: No
+- **Backup**: Skip final snapshot (development mode)
 
-Expected: `231`
+#### Database Schema
+- **Database Name**: country_schema
+- **Table**: countrydata_final
+- **Records**: 231 countries
+- **Columns**: Country, Country_Code, Continent, Net_users, GDP, Life_Expectancy, Military_Expenditure, Population, Birth_Rate, Death_rate
 
-**Step 4: Sample Query**
-```bash
-mysql -h $RDS_HOST -u admin -p$DB_PASS country_schema \
-  -e "SELECT name, population, gdp FROM countrydata_final WHERE name LIKE 'United%';"
-```
+### Security Layer
 
----
+#### Security Groups
 
-### 6.3 Database Schema
+**1. ALB Security Group (capstone-alb-sg)**
 
-**Table: `countrydata_final`**
+| Direction | Protocol | Port | Source/Destination | Purpose |
+|-----------|----------|------|-------------------|---------|
+| Inbound | TCP | 80 | 0.0.0.0/0 | Accept HTTP from internet |
+| Outbound | All | All | 0.0.0.0/0 | Forward to targets, return traffic |
 
-| Column | Type | Description |
-|--------|------|-------------|
-| name | text | Country name |
-| mobilephones | double | Number of mobile phone subscribers |
-| mortalityunder5 | double | Under-5 mortality rate per 1,000 |
-| healthexpenditurepercapita | double | Health spending per capita (USD) |
-| healthexpenditureppercentGDP | double | Health spending as % of GDP |
-| population | double | Total population |
-| populationurban | double | Urban population |
-| birthrate | double | Birth rate per 1,000 |
-| lifeexpectancy | double | Life expectancy (years) |
-| GDP | double | Gross Domestic Product (USD) |
+**2. Web Security Group (capstone-web-sg)**
 
----
+| Direction | Protocol | Port | Source/Destination | Purpose |
+|-----------|----------|------|-------------------|---------|
+| Inbound | TCP | 80 | sg-alb | Accept HTTP only from ALB |
+| Inbound | TCP | 22 | 0.0.0.0/0 | SSH for maintenance |
+| Outbound | All | All | 0.0.0.0/0 | Access RDS, S3, Secrets Manager, internet |
 
-## 7. Application Deployment
+**3. RDS Security Group (capstone-rds-sg)**
 
-### 7.1 Application Architecture
+| Direction | Protocol | Port | Source/Destination | Purpose |
+|-----------|----------|------|-------------------|---------|
+| Inbound | TCP | 3306 | sg-web | Accept MySQL only from web servers |
+| Outbound | All | All | 0.0.0.0/0 | Standard configuration |
 
-The PHP application follows a simple query-response pattern:
+**Security Notes**:
+- **Defense-in-depth**: Three security layers (ALB → EC2 → RDS)
+- **Least privilege**: Each layer only trusts the previous layer
+- **Stateful firewalls**: Outbound rules allow all for operational simplicity; inbound rules enforce security
+- **Database isolation**: RDS accessible only from web servers, not from internet
 
-```
-User Browser
-     │
-     ▼
-index.php (Homepage)
-     │
-     ▼
-query.php (Query Selection)
-     │
-     ▼
-query2.php (Dispatcher)
-     │
-     ├─→ mobile.php ────┐
-     ├─→ population.php ┤
-     ├─→ gdp.php ───────┤
-     ├─→ mortality.php ─┤
-     └─→ lifeexpectancy.php
-              │
-              ▼
-     get-parameters.php (DB Connection)
-              │
-              ▼
-       RDS MySQL Database
-```
+#### IAM Roles and Policies
 
-**Key Flow:**
-1. User selects query type (Q1-Q5)
-2. `query2.php` includes appropriate query file
-3. Query file includes `get-parameters.php` to get DB credentials
-4. Executes SQL query and displays HTML table
+**EC2 Instance Role (capstone-ec2-role)**:
+- **Trust Policy**: ec2.amazonaws.com
+- **Attached Policies**:
+  - Secrets Manager access (GetSecretValue, DescribeSecret)
+  - S3 read access for application files (GetObject, ListBucket)
+  - RDS metadata access (DescribeDBInstances)
 
----
+**Instance Profile**: capstone-ec2-profile (attached to all EC2 instances)
 
-### 7.2 Testing Application
+### AWS Services Layer
 
-**Access Application URLs:**
-```bash
-# Get URLs from Terraform
-terraform output instance_public_urls
+#### Secrets Manager
+- **Secret Name**: capstone-db-credentials
+- **Contents**: JSON with username, password, host, port, dbname, engine
+- **Password**: Auto-generated 16-character random string
+- **Encryption**: AWS managed key (at-rest)
+- **Purpose**: Centralized, secure credential storage
 
-# Test each instance
-curl -s http://98.92.143.68/ | grep "Example Social Research"
-curl -s http://54.165.28.132/ | grep "Example Social Research"
-```
-
-**Test Query Functionality:**
-```bash
-# Test mobile phones query
-curl -s -X POST "http://98.92.143.68/query2.php" -d "selection=Q1" | grep "Afghanistan"
-
-# Test population query
-curl -s -X POST "http://54.165.28.132/query2.php" -d "selection=Q2" | grep "population"
-```
-
-**Expected Results:**
-- Homepage displays organization information
-- Query page shows dropdown with 5 options
-- Each query returns data in HTML table format
-- Data includes 231 countries
+#### S3 Bucket
+- **Purpose**: Store PHP application files
+- **Contents**:
+  - PHP source code
+  - composer.json and vendor dependencies
+  - Application configuration
+- **Access**: Via IAM role from EC2 instances
 
 ---
 
-## 8. Troubleshooting
+## Project Structure
 
-### 8.1 Common Deployment Issues
-
-#### **Issue: Terraform Apply Fails with "EntityAlreadyExists"**
-
-**Error:**
 ```
-Error: creating IAM Role (capstone-ec2-role): EntityAlreadyExists: Role with name capstone-ec2-role already exists
+capstone/
+├── README.md                    # This file
+├── provider.tf                  # AWS provider configuration
+├── variables.tf                 # Input variables
+├── terraform.tfvars             # Variable values
+├── data.tf                      # Data sources (AMI, AZs)
+├── main.tf                      # Core infrastructure
+├── outputs.tf                   # Output values
+├── user-data.sh                 # EC2 bootstrap script
+├── php-app/                     # Application source
+│   ├── index.php               # Landing page
+│   ├── get-parameters.php      # DB credential retrieval
+│   ├── mobile.php              # Internet users query
+│   ├── gdp.php                 # GDP query
+│   ├── population.php          # Population query
+│   ├── mortality.php           # Mortality query
+│   ├── lifeexpectancy.php      # Life expectancy query
+│   ├── composer.json           # PHP dependencies
+│   └── vendor/                 # AWS SDK and libraries
+├── .gitignore                  # Git ignore rules
+│
+└── Generated Files (Not in Git - Security):
+    ├── capstone-key.pem        # SSH private key (4096-bit RSA)
+    ├── terraform.tfstate       # Current infrastructure state
+    ├── terraform.tfstate.backup # Previous state backup
+    ├── .terraform/             # Terraform plugins and modules
+    ├── .terraform.lock.hcl     # Provider version lock
+    └── terraform.tfvars        # Variable values (contains S3 bucket name)
 ```
 
-**Cause:** Previous deployment wasn't fully destroyed
-
-**Solution:**
-```bash
-# Import existing resource
-terraform import aws_iam_role.ec2_role capstone-ec2-role
-
-# Then apply
-terraform apply
-```
+**Security Note**: Files listed under "Generated Files" contain sensitive data and are excluded from version control via `.gitignore`. These include:
+- **capstone-key.pem**: Private SSH key for EC2 access (never commit)
+- **terraform.tfstate**: Contains resource IDs, IPs, and potentially sensitive outputs
+- **terraform.tfvars**: May contain bucket names and configuration details
+- **.terraform/**: Provider binaries and cached modules
 
 ---
 
-#### **Issue: EC2 Instances Not Downloading from S3**
+## Application Details
 
-**Symptoms:**
-- Instances show "Deployment Error" page
-- `/var/log/user-data.log` shows S3 download failed
+### Technology Stack
 
-**Diagnosis:**
-```bash
-# SSH to instance
-ssh -i capstone-key.pem ec2-user@<instance-ip>
+- **Frontend**: HTML, PHP
+- **Backend**: PHP 8.2
+- **Database**: MySQL 8.0
+- **Web Server**: Apache HTTP Server (httpd)
+- **Dependencies**: AWS SDK for PHP v3
 
-# Check logs
-sudo cat /var/log/user-data.log | grep S3
+### Application Flow
 
-# Test S3 access manually
-aws s3 ls s3://capstone-php-app-1761693785/php-app/
-```
+1. User accesses ALB DNS name
+2. ALB forwards request to healthy EC2 instance
+3. Apache receives request and invokes PHP
+4. PHP includes `get-parameters.php` to retrieve database credentials
+5. Application connects to RDS MySQL
+6. Query executes and returns results
+7. HTML formatted response sent back through ALB to user
 
-**Common Causes:**
-1. **Wrong bucket name in terraform.tfvars**
-   ```bash
-   # Check current value
-   grep s3_php_app_bucket terraform.tfvars
+### Query Pages
 
-   # Verify bucket exists
-   aws s3 ls | grep capstone
-   ```
+| Page | Description | Query |
+|------|-------------|-------|
+| **index.php** | Landing page with query links | - |
+| **mobile.php** | Countries by internet users | ORDER BY Net_users DESC |
+| **gdp.php** | Countries by GDP | ORDER BY GDP DESC |
+| **population.php** | Countries by population | ORDER BY Population DESC |
+| **mortality.php** | Countries by death rate | ORDER BY Death_rate DESC |
+| **lifeexpectancy.php** | Countries by life expectancy | ORDER BY Life_Expectancy DESC |
 
-2. **IAM role missing S3 permissions**
-   ```bash
-   # Check instance role
-   aws ec2 describe-instances --instance-ids <id> \
-     --query 'Reservations[0].Instances[0].IamInstanceProfile'
+### Database Connection Process
 
-   # Check role policies
-   aws iam list-role-policies --role-name capstone-ec2-role
-   ```
+The application uses a centralized authentication mechanism:
 
-3. **S3 bucket empty**
-   ```bash
-   # Verify files in bucket
-   aws s3 ls s3://capstone-php-app-1761693785/php-app/ --recursive
+1. **get-parameters.php**:
+   - Retrieves EC2 instance metadata (region) via IMDSv2
+   - Creates AWS Secrets Manager client
+   - Fetches `capstone-db-credentials` secret
+   - Parses JSON to extract: `$ep` (endpoint), `$un` (username), `$pw` (password), `$db` (database name)
+   - Provides these variables to all query pages
 
-   # If empty, re-upload
-   ./upload-to-s3.sh
-   ```
-
----
-
-#### **Issue: Application Shows "Connection Error" to Database**
-
-**Symptoms:**
-- Query pages display database connection errors
-- PHP error logs show "Connection refused" or "Access denied"
-
-**Diagnosis:**
-```bash
-# SSH to instance
-ssh -i capstone-key.pem ec2-user@<instance-ip>
-
-# Check if RDS is reachable
-RDS_HOST=$(aws secretsmanager get-secret-value \
-  --secret-id capstone-db-credentials \
-  --region us-east-1 \
-  --query SecretString \
-  --output text | jq -r '.host')
-
-mysql -h $RDS_HOST -u admin -p -e "SELECT 1"
-```
-
-**Common Causes:**
-1. **Security group misconfiguration**
-   ```bash
-   # Check web server SG ID
-   WEB_SG=$(aws ec2 describe-instances --instance-ids <id> \
-     --query 'Reservations[0].Instances[0].SecurityGroups[0].GroupId' \
-     --output text)
-
-   # Check RDS allows web SG
-   aws ec2 describe-security-groups \
-     --filters "Name=group-name,Values=capstone-rds-sg" \
-     --query 'SecurityGroups[0].IpPermissions'
-   ```
-
-2. **Database not imported**
-   ```bash
-   # Connect and check table
-   mysql -h $RDS_HOST -u admin -p country_schema \
-     -e "SHOW TABLES; SELECT COUNT(*) FROM countrydata_final;"
-   ```
-
-3. **Wrong credentials in Secrets Manager**
-   ```bash
-   # Verify secret contents
-   aws secretsmanager get-secret-value \
-     --secret-id capstone-db-credentials \
-     --region us-east-1 \
-     --query SecretString \
-     --output text | jq '.'
-   ```
+2. **Query pages**:
+   - Include `get-parameters.php`
+   - Use provided variables to establish MySQL connection
+   - Execute SELECT queries
+   - Display results in HTML tables
 
 ---
 
-#### **Issue: Auto Scaling Not Launching Instances**
+## Deployment Guide
 
-**Symptoms:**
-- ASG shows 0 instances
-- Scaling activities show failures
+### Prerequisites
 
-**Diagnosis:**
+1. **AWS Account** with appropriate permissions
+2. **Terraform** v1.0 or higher installed
+3. **AWS CLI** configured with credentials
+4. **S3 Bucket** created with PHP application files uploaded
+
+### Step 1: Prepare S3 Bucket
+
 ```bash
-# Check ASG status
-aws autoscaling describe-auto-scaling-groups \
-  --auto-scaling-group-names capstone-asg \
-  --region us-east-1
+# Create S3 bucket (replace with unique name)
+aws s3 mb s3://your-unique-bucket-name
 
-# View recent scaling activities
-aws autoscaling describe-scaling-activities \
-  --auto-scaling-group-name capstone-asg \
-  --max-records 10 \
-  --region us-east-1 \
-  --query 'Activities[].{Time:StartTime,Description:Description,Status:StatusCode,Cause:Cause}'
+# Upload PHP application
+aws s3 sync ./php-app s3://your-unique-bucket-name/
 ```
 
-**Common Causes:**
-1. **Launch template references missing AMI**
-2. **Subnet quota exceeded**
-3. **Instance type not available in AZ**
+### Step 2: Configure Variables
 
-**Solution:**
-```bash
-# Force new instances
-terraform taint aws_launch_template.web
-terraform apply
-```
+Edit `terraform.tfvars`:
 
----
-
-### 8.2 Application Debugging
-
-#### **Enable PHP Error Display**
-
-**SSH to instance:**
-```bash
-ssh -i capstone-key.pem ec2-user@<instance-ip>
-
-# Edit PHP configuration
-sudo vi /etc/php.ini
-
-# Change these lines:
-display_errors = On
-error_reporting = E_ALL
-
-# Restart Apache
-sudo systemctl restart httpd
-```
-
-**View PHP errors in browser or logs:**
-```bash
-sudo tail -f /var/log/httpd/error_log
-```
-
----
-
-#### **Test Database Connection Manually**
-
-Create test file on instance:
-```bash
-sudo tee /var/www/html/test-db.php > /dev/null << 'EOF'
-<?php
-require '/var/www/html/vendor/autoload.php';
-
-$secrets_client = new Aws\SecretsManager\SecretsManagerClient([
-  'version' => 'latest',
-  'region'  => 'us-east-1'
-]);
-
-$result = $secrets_client->getSecretValue([
-  'SecretId' => 'capstone-db-credentials',
-]);
-
-$secret = json_decode($result['SecretString'], true);
-
-echo "Host: " . $secret['host'] . "<br>";
-echo "User: " . $secret['username'] . "<br>";
-echo "Database: " . $secret['dbname'] . "<br>";
-
-$conn = new mysqli($secret['host'], $secret['username'], $secret['password'], $secret['dbname']);
-
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
-
-echo "Connected successfully!<br>";
-
-$result = $conn->query("SELECT COUNT(*) as total FROM countrydata_final");
-$row = $result->fetch_assoc();
-echo "Total countries: " . $row['total'];
-?>
-EOF
-
-# Set permissions
-sudo chown apache:apache /var/www/html/test-db.php
-
-# Access via browser: http://<instance-ip>/test-db.php
-```
-
-Expected output:
-```
-Host: capstone-mysql-db.ck9uegaac4l0.us-east-1.rds.amazonaws.com
-User: admin
-Database: country_schema
-Connected successfully!
-Total countries: 231
-```
-
----
-
-### 8.3 Network Debugging
-
-#### **Test Internet Connectivity**
-```bash
-ssh -i capstone-key.pem ec2-user@<instance-ip>
-
-# Test outbound internet
-curl -I https://google.com
-
-# Test AWS API access
-aws s3 ls
-
-# Test RDS connectivity
-nc -zv capstone-mysql-db.ck9uegaac4l0.us-east-1.rds.amazonaws.com 3306
-```
-
----
-
-#### **Check Security Group Rules**
-```bash
-# Get instance security group
-aws ec2 describe-instances --instance-ids <id> \
-  --query 'Reservations[0].Instances[0].SecurityGroups'
-
-# View detailed rules
-aws ec2 describe-security-groups --group-ids <sg-id>
-```
-
----
-
-## 9. Cost Optimization
-
-### 9.1 Current Monthly Costs (us-east-1)
-
-| Resource | Quantity | Unit Cost | Monthly Cost |
-|----------|----------|-----------|--------------|
-| EC2 t3.micro | 2 instances | $0.0104/hr | $15.08 |
-| RDS db.t3.micro | 1 instance | $0.017/hr | $12.41 |
-| RDS Storage (20GB) | 20GB | $0.115/GB | $2.30 |
-| NAT Gateway | 1 gateway | $0.045/hr | $32.85 |
-| NAT Data Transfer | ~10GB | $0.045/GB | $0.45 |
-| Elastic IP (NAT) | 1 IP | $0.00/hr | $0.00 |
-| S3 Storage | <1GB | $0.023/GB | $0.02 |
-| S3 Requests | ~100 | Minimal | $0.01 |
-| Secrets Manager | 1 secret | $0.40/month | $0.40 |
-| **TOTAL** | | | **$63.52/month** |
-
-### 9.2 Cost Reduction Strategies
-
-#### **Development Environment (Est. $18/month)**
 ```hcl
-# terraform.tfvars changes
-asg_min_size         = 1   # Down from 2
-asg_max_size         = 2   # Down from 4
-asg_desired_capacity = 1   # Down from 2
-
-# Comment out NAT Gateway in main.tf
-# Use public subnets for all resources
+s3_php_app_bucket = "your-unique-bucket-name"
+aws_region        = "us-east-1"
 ```
 
-**Savings:** ~$45/month (removed NAT Gateway + 1 instance)
+Optional customizations in `variables.tf`:
+- `instance_type` (default: t3.micro)
+- `db_instance_class` (default: db.t3.micro)
+- `asg_min_size` (default: 2)
+- `asg_max_size` (default: 4)
+- `asg_desired_capacity` (default: 2)
+
+### Step 3: Initialize Terraform
+
+```bash
+terraform init
+```
+
+This downloads the AWS provider and initializes the working directory.
+
+### Step 4: Plan Infrastructure
+
+```bash
+terraform plan -out=tfplan
+```
+
+Review the planned changes. You should see approximately 30+ resources to be created.
+
+### Step 5: Deploy Infrastructure
+
+```bash
+terraform apply tfplan
+```
+
+Type `yes` when prompted. Deployment takes approximately 10-15 minutes.
+
+### Step 6: Retrieve Outputs
+
+```bash
+terraform output
+```
+
+Important outputs:
+- **alb_dns_name**: Public URL to access application
+- **alb_url**: Full HTTP URL
+- **rds_endpoint**: Database endpoint
+- **vpc_id**: VPC identifier
+
+### Step 7: Access Application
+
+```bash
+# Get the ALB URL
+terraform output alb_url
+
+# Example output: http://capstone-alb-123456789.us-east-1.elb.amazonaws.com
+```
+
+Open this URL in a web browser to access the application.
+
+### Step 8: Verify Deployment
+
+1. **Check ALB**: Should show as "active" in AWS Console
+2. **Check Target Group**: Both targets should be "healthy"
+3. **Check Auto Scaling Group**: Should show 2 running instances
+4. **Check RDS**: Should show as "available"
+5. **Test Application**: Click through query pages to verify database connectivity
 
 ---
 
-#### **Spot Instances (Save 70% on EC2)**
+## How It Works
+
+### File-by-File Documentation
+
+#### Infrastructure Files
+
+**provider.tf**
 ```hcl
-resource "aws_autoscaling_group" "web" {
-  # Add spot instance configuration
-  mixed_instances_policy {
-    instances_distribution {
-      on_demand_percentage_above_base_capacity = 0
-      spot_allocation_strategy                 = "lowest-price"
-    }
+# Configures AWS provider
+# Sets region and default tags for all resources
+# Tags include: Project, Environment, ManagedBy
+```
 
-    launch_template {
-      launch_template_specification {
-        launch_template_id = aws_launch_template.web.id
-        version            = "$Latest"
-      }
+**variables.tf**
+```hcl
+# Defines all input variables with defaults
+# Variables include:
+# - aws_region: Deployment region
+# - instance_type: EC2 instance size
+# - db_instance_class: RDS instance size
+# - asg_min_size, asg_max_size, asg_desired_capacity: Auto Scaling settings
+# - db_name, db_username: Database configuration
+# - s3_php_app_bucket: Application source location
+```
 
-      override {
-        instance_type = "t3.micro"
-      }
-    }
+**terraform.tfvars**
+```hcl
+# Provides values for variables
+# Must set s3_php_app_bucket to your bucket name
+```
+
+**data.tf**
+```hcl
+# Data sources that query AWS for information
+# - aws_availability_zones: Gets available AZs
+# - aws_ami: Fetches latest Amazon Linux 2023 AMI
+# - aws_instances: Queries running web server instances
+```
+
+**main.tf** (Core Infrastructure - 580 lines)
+
+*Section 1: SSH Key Pair (Lines 1-18)*
+- Generates RSA 4096-bit key pair
+- Creates AWS key pair resource
+- Saves private key locally as capstone-key.pem
+
+*Section 2: VPC and Networking (Lines 20-171)*
+- VPC creation (10.0.0.0/16)
+- Internet Gateway
+- 6 subnets across 2 AZs (public, private, database)
+- NAT Gateway with Elastic IP
+- Route tables and associations
+
+*Section 3: Security Groups (Lines 173-357)*
+- ALB Security Group (HTTP from internet)
+- Web Security Group (HTTP from ALB, SSH from anywhere)
+- RDS Security Group (MySQL from web servers only)
+
+*Section 4: Database (Lines 235-293)*
+- DB Subnet Group
+- Random password generation
+- Secrets Manager secret and version
+- RDS MySQL instance
+
+*Section 5: IAM (Lines 295-371)*
+- EC2 instance role
+- Secrets Manager policy
+- S3 access policy
+- Instance profile
+
+*Section 6: Compute (Lines 373-438)*
+- Launch template with user data
+- Auto Scaling Group
+- Scaling policy (CPU target tracking)
+
+*Section 7: Load Balancer (Lines 220-330)*
+- ALB in public subnets
+- Target group with health checks
+- HTTP listener
+
+**outputs.tf**
+```hcl
+# Outputs important resource information
+# - alb_dns_name: Load balancer DNS
+# - alb_url: Full HTTP URL
+# - rds_endpoint: Database endpoint
+# - vpc_id, nat_gateway_public_ip, autoscaling_group_name
+```
+
+**user-data.sh** (Bootstrap Script)
+
+Executes on each EC2 instance launch:
+
+1. **System Update**: `yum update -y`
+2. **Install Apache**: `yum install httpd -y`
+3. **Install PHP 8.2**: Enable amazon-linux-extras, install PHP and extensions (mysql, curl, json)
+4. **Install AWS CLI v2**: Download and install latest CLI
+5. **Sync Application from S3**: `aws s3 sync s3://bucket-name /var/www/html`
+6. **Install Composer**: PHP dependency manager
+7. **Install AWS SDK**: `composer install` in /var/www/html
+8. **Configure Apache**: Set DocumentRoot, enable PHP
+9. **Start Services**: Enable and start httpd
+10. **Set Permissions**: Ensure www-data can read files
+
+#### Application Files
+
+**php-app/index.php**
+- Landing page with query links
+- Lists available queries: Mobile Users, GDP, Population, Mortality, Life Expectancy
+- Simple navigation interface
+
+**php-app/get-parameters.php**
+- **Line 8-19**: Retrieve IMDSv2 token for instance metadata
+- **Line 26-32**: Get availability zone from instance metadata
+- **Line 36**: Extract region from AZ
+- **Line 39-42**: Create Secrets Manager client
+- **Line 46-50**: Fetch database credentials from secret
+- **Line 53-56**: Parse JSON and extract variables ($ep, $un, $pw, $db)
+- **Line 59-64**: Error handling if secret retrieval fails
+- **Provides**: Database connection variables to all query pages
+
+**php-app/mobile.php, gdp.php, population.php, mortality.php, lifeexpectancy.php**
+
+Structure (all similar):
+1. Include `get-parameters.php` to get DB credentials
+2. Create MySQLi connection using `$ep`, `$un`, `$pw`, `$db`
+3. Execute SELECT query with ORDER BY on relevant column
+4. Loop through results and display in HTML table
+5. Close database connection
+6. Provide link back to index
+
+**php-app/composer.json**
+```json
+{
+  "require": {
+    "aws/aws-sdk-php": "^3.0"
   }
 }
 ```
+Defines dependency on AWS SDK for PHP (required for Secrets Manager)
 
-**Savings:** ~$10/month on EC2
+### Resource Dependencies
+
+```
+VPC
+ ├─→ Internet Gateway
+ ├─→ Subnets
+ │    ├─→ Public Subnets
+ │    │    ├─→ NAT Gateway (requires EIP)
+ │    │    └─→ ALB
+ │    ├─→ Private Subnets
+ │    │    └─→ EC2 Instances (via ASG)
+ │    └─→ DB Subnets
+ │         └─→ RDS
+ ├─→ Route Tables
+ │    ├─→ Public RT (to IGW)
+ │    └─→ Private RT (to NAT)
+ └─→ Security Groups
+      ├─→ SG-ALB
+      ├─→ SG-Web (references SG-ALB)
+      └─→ SG-RDS (references SG-Web)
+
+IAM Role
+ └─→ Instance Profile
+      └─→ EC2 Instances
+
+Secrets Manager
+ └─→ Secret Version
+      └─→ EC2 Instances (access via SDK)
+
+S3 Bucket
+ └─→ EC2 Instances (access via IAM role)
+
+Launch Template (references: Key Pair, Security Group, IAM Profile)
+ └─→ Auto Scaling Group
+      └─→ EC2 Instances
+           └─→ Target Group
+                └─→ ALB Listener
+```
+
+### Interaction Flow
+
+**Deployment**:
+1. Terraform creates VPC and networking
+2. Secrets Manager stores generated DB password
+3. RDS launches with credentials from Secrets Manager
+4. IAM role created with policies
+5. Launch template configured with user-data script
+6. Auto Scaling Group launches initial instances
+7. User-data script runs on each instance:
+   - Installs software
+   - Downloads application from S3
+   - Installs AWS SDK
+   - Starts Apache
+8. Instances register with Target Group
+9. ALB begins health checks
+10. After passing health checks, instances receive traffic
+
+**Runtime**:
+1. User browser → ALB DNS name
+2. ALB → Healthy target (EC2 instance)
+3. Apache → PHP processor
+4. PHP includes get-parameters.php
+5. get-parameters.php → Secrets Manager (retrieves DB credentials)
+6. PHP establishes MySQL connection to RDS
+7. Query executes, results fetched
+8. HTML rendered with results
+9. Response → ALB → User browser
+
+**Scaling**:
+1. CloudWatch monitors CPU utilization
+2. If CPU > 50% for sustained period:
+   - Auto Scaling launches new instance(s)
+   - User-data script runs on new instance
+   - Instance registers with Target Group
+   - After health checks pass, receives traffic
+3. If CPU < 50% for sustained period:
+   - Auto Scaling terminates excess instances
+   - Minimum of 2 instances always maintained
 
 ---
 
-#### **RDS Reserved Instance (Save 40%)**
+## Security
 
-Purchase 1-year reserved instance for RDS:
+### Network Security
+
+**Isolation**:
+- EC2 instances in private subnets with no public IPs
+- RDS in dedicated database subnets
+- NAT Gateway provides controlled outbound access
+
+**Access Control**:
+- ALB is the only public entry point
+- EC2 instances accessible only via ALB or SSH
+- RDS accessible only from EC2 instances
+
+**Defense in Depth**:
+- Layer 1: ALB accepts traffic from internet
+- Layer 2: EC2 accepts HTTP only from ALB
+- Layer 3: RDS accepts MySQL only from EC2
+
+### Data Security
+
+**Encryption**:
+- Secrets in Secrets Manager encrypted at rest (AWS managed key)
+- RDS storage can be encrypted (optional, not enabled)
+- SSL/TLS for communication with AWS APIs
+
+**Credential Management**:
+- No hardcoded passwords in code
+- Database credentials auto-generated and stored in Secrets Manager
+- IAM role-based access (no API keys in code)
+- SSH private key stored securely
+
+### Application Security
+
+**Best Practices**:
+- IMDSv2 enforced (instance metadata protection)
+- Principle of least privilege for IAM policies
+- Security groups follow least privilege
+- Regular updates via yum (in user-data)
+
+**Potential Improvements**:
+- Enable SSL/TLS on ALB (requires ACM certificate)
+- Enable WAF on ALB for application-layer protection
+- Enable RDS encryption at rest
+- Restrict SSH to bastion host or Systems Manager
+- Enable VPC Flow Logs
+- Enable CloudWatch Logs for application logging
+- Implement GuardDuty for threat detection
+
+---
+
+## Cost Analysis
+
+### Monthly Cost Estimate (us-east-1)
+
+| Resource | Type | Quantity | Hourly | Monthly |
+|----------|------|----------|--------|---------|
+| EC2 Instances | t3.micro | 2 | $0.0104 × 2 | ~$15.00 |
+| Application Load Balancer | ALB | 1 | $0.0225 | ~$16.00 |
+| RDS MySQL | db.t3.micro | 1 | $0.018 | ~$13.00 |
+| EBS Volumes | GP2 | 50 GB | - | ~$5.00 |
+| NAT Gateway | Standard | 1 | $0.045 | ~$32.00 |
+| Data Transfer (NAT) | - | ~100 GB | $0.045/GB | ~$5.00 |
+| **Total** | | | | **~$86/month** |
+
+**Cost Breakdown**:
+- Compute (EC2): 17%
+- Load Balancer: 19%
+- Database: 15%
+- Networking (NAT): 43%
+- Storage: 6%
+
+### Cost Optimization Strategies
+
+1. **NAT Gateway** (highest cost):
+   - Use VPC endpoints for S3 and Secrets Manager (saves ~$30/month)
+   - Share single NAT across multiple projects
+   - Consider NAT instance for lower traffic
+
+2. **Auto Scaling**:
+   - Scale down to 1 instance during off-peak hours
+   - Use scheduled scaling for predictable patterns
+
+3. **Reserved Instances**:
+   - 1-year commitment: ~40% savings
+   - 3-year commitment: ~60% savings
+
+4. **Right-sizing**:
+   - Monitor actual usage with CloudWatch
+   - Downsize if consistently low utilization
+
+**Free Tier** (First 12 months):
+- 750 hours/month of t2.micro (not t3.micro)
+- 750 hours/month of db.t2.micro (not t3.micro)
+- 15 GB data transfer out
+- This deployment uses t3 instances (not free tier eligible)
+
+---
+
+## Maintenance and Operations
+
+### Monitoring
+
+**CloudWatch Metrics** (Available by default):
+- EC2: CPU, Network, Disk
+- ALB: Request count, latency, target health
+- RDS: CPU, connections, storage
+- Auto Scaling: Group size, scaling activities
+
+**Health Checks**:
+- ALB performs HTTP health checks every 30 seconds
+- Unhealthy instances automatically replaced by Auto Scaling
+
+### Accessing Instances
+
+**Via SSH**:
 ```bash
-aws rds purchase-reserved-db-instances-offering \
-  --reserved-db-instances-offering-id <offering-id> \
-  --db-instance-count 1
+# Get instance private IP from outputs or console
+ssh -i capstone-key.pem ec2-user@<private-ip>
+
+# Note: Requires bastion host or VPN since instances are in private subnets
 ```
 
-**Savings:** ~$5/month
-
----
-
-#### **Scheduled Scaling (Dev Hours Only)**
-
-Auto-stop instances outside business hours:
+**Via Systems Manager Session Manager** (Recommended):
 ```bash
-# Add Lambda function to stop instances at 6 PM
-# Start instances at 8 AM
-# Runs only on weekdays
+# No SSH key or bastion needed
+aws ssm start-session --target <instance-id>
 ```
 
-**Savings:** ~$25/month (75% time reduction)
+### Application Updates
 
----
-
-### 9.3 Free Tier Eligible Resources
-
-**AWS Free Tier (First 12 months):**
-- EC2: 750 hours/month t2.micro or t3.micro
-- RDS: 750 hours/month db.t2.micro or db.t3.micro
-- S3: 5GB storage, 20,000 GET requests
-- NAT Gateway: Not free tier eligible
-- Secrets Manager: 30-day free trial, then $0.40/month
-
-**Strategy:** Stay within free tier limits:
-```hcl
-# Free tier configuration
-instance_type = "t3.micro"  # ✓ Free tier eligible
-db_instance_class = "db.t3.micro"  # ✓ Free tier eligible
-asg_desired_capacity = 1  # ✓ Within 750 hours/month
-```
-
----
-
-## 10. Security Best Practices
-
-### 10.1 Current Security Posture
-
-**✅ Implemented:**
-- Secrets Manager for database credentials
-- Security groups with least privilege
-- IAM roles with specific resource ARNs
-- Private database subnets
-- SSH key authentication only
-
-**⚠️ Needs Improvement:**
-- SSH open to 0.0.0.0/0 (should restrict to your IP)
-- HTTP only (no HTTPS)
-- No WAF or DDoS protection
-- Secrets Manager has 0-day recovery window (production should be 7-30 days)
-
----
-
-### 10.2 Security Hardening Recommendations
-
-#### **10.2.1 Restrict SSH Access**
-
-**Current:**
-```hcl
-ingress {
-  from_port   = 22
-  to_port     = 22
-  protocol    = "tcp"
-  cidr_blocks = ["0.0.0.0/0"]  # ⚠️ Open to world
-}
-```
-
-**Improved:**
-```hcl
-ingress {
-  from_port   = 22
-  to_port     = 22
-  protocol    = "tcp"
-  cidr_blocks = ["YOUR_IP/32"]  # ✅ Only your IP
-  description = "SSH from my IP only"
-}
-```
-
-**Get your IP:**
+**Method 1: Update S3 and Refresh Instances**
 ```bash
-curl -s https://checkip.amazonaws.com
+# Update files in S3
+aws s3 sync ./php-app s3://your-bucket-name/
+
+# Trigger instance refresh (graceful replacement)
+aws autoscaling start-instance-refresh \
+  --auto-scaling-group-name capstone-asg \
+  --preferences '{"MinHealthyPercentage":50}'
 ```
 
----
+**Method 2: Rolling Update**
+1. Update Launch Template with new user-data or AMI
+2. Trigger instance refresh
+3. Auto Scaling gradually replaces instances
 
-#### **10.2.2 Enable HTTPS**
+### Database Operations
 
-**Prerequisites:**
-- Domain name (e.g., capstone.example.com)
-- ACM certificate
-
-**Steps:**
-1. Request ACM certificate
-2. Add Application Load Balancer with HTTPS listener
-3. Redirect HTTP to HTTPS
-
----
-
-#### **10.2.3 Enable RDS Encryption**
-
-```hcl
-resource "aws_db_instance" "main" {
-  # ...existing config...
-  storage_encrypted = true
-  kms_key_id        = aws_kms_key.rds.arn
-}
-```
-
----
-
-#### **10.2.4 Enable S3 Bucket Encryption**
-
+**Backup and Restore**:
 ```bash
-aws s3api put-bucket-encryption \
-  --bucket capstone-php-app-1761693785 \
-  --server-side-encryption-configuration '{
-    "Rules": [{
-      "ApplyServerSideEncryptionByDefault": {
-        "SSEAlgorithm": "AES256"
-      }
-    }]
-  }'
-```
-
----
-
-#### **10.2.5 Enable CloudTrail Logging**
-
-```hcl
-resource "aws_cloudtrail" "capstone" {
-  name                          = "capstone-trail"
-  s3_bucket_name                = aws_s3_bucket.cloudtrail.bucket
-  include_global_service_events = true
-  is_multi_region_trail         = true
-}
-```
-
----
-
-#### **10.2.6 Implement Secrets Rotation**
-
-```hcl
-resource "aws_secretsmanager_secret_rotation" "db_credentials" {
-  secret_id           = aws_secretsmanager_secret.db_credentials.id
-  rotation_lambda_arn = aws_lambda_function.rotate_secret.arn
-
-  rotation_rules {
-    automatically_after_days = 30
-  }
-}
-```
-
----
-
-### 10.3 Compliance Checklist
-
-**AWS Well-Architected Framework - Security Pillar:**
-
-- [x] IAM roles instead of access keys
-- [x] Secrets in Secrets Manager (not hardcoded)
-- [x] Security groups (not network ACLs alone)
-- [x] Private database subnets
-- [ ] MFA for root account
-- [ ] CloudTrail enabled
-- [ ] Encryption at rest (RDS, S3)
-- [ ] Encryption in transit (HTTPS)
-- [ ] Regular security audits
-- [ ] Automated vulnerability scanning
-
----
-
-## Appendix A: Quick Reference Commands
-
-### Terraform Operations
-```bash
-terraform init                    # Initialize
-terraform plan                    # Preview changes
-terraform apply                   # Deploy
-terraform destroy                 # Delete all resources
-terraform output                  # Show outputs
-terraform state list              # List resources
-terraform fmt                     # Format code
-terraform validate                # Validate syntax
-```
-
-### AWS CLI - EC2
-```bash
-# List instances
-aws ec2 describe-instances --filters "Name=tag:Name,Values=capstone-web-server"
-
-# Get instance IPs
-aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=capstone-web-server" "Name=instance-state-name,Values=running" \
-  --query 'Reservations[].Instances[].[InstanceId,PublicIpAddress]' \
-  --output table
-
-# SSH to instance
-ssh -i capstone-key.pem ec2-user@<ip>
-
-# Terminate instance (ASG will replace)
-aws ec2 terminate-instances --instance-ids <id>
-```
-
-### AWS CLI - RDS
-```bash
-# Get RDS endpoint
-aws rds describe-db-instances \
+# Manual snapshot
+aws rds create-db-snapshot \
   --db-instance-identifier capstone-mysql-db \
-  --query 'DBInstances[0].Endpoint.Address' \
-  --output text
+  --db-snapshot-identifier manual-snapshot-$(date +%Y%m%d)
 
-# Connect to database
-mysql -h $(terraform output -raw rds_address) -u admin -p
+# Restore from snapshot
+aws rds restore-db-instance-from-db-snapshot \
+  --db-instance-identifier new-instance \
+  --db-snapshot-identifier manual-snapshot-20250106
 ```
 
-### AWS CLI - Auto Scaling
+**Connect to Database**:
 ```bash
-# Get ASG details
+# From EC2 instance
+mysql -h capstone-mysql-db.ck9uegaac4l0.us-east-1.rds.amazonaws.com \
+  -u admin -p country_schema
+```
+
+### Scaling
+
+**Manual Scaling**:
+```bash
+# Increase desired capacity
+aws autoscaling set-desired-capacity \
+  --auto-scaling-group-name capstone-asg \
+  --desired-capacity 4
+```
+
+**Scheduled Scaling**:
+```bash
+# Scale up during business hours
+aws autoscaling put-scheduled-update-group-action \
+  --auto-scaling-group-name capstone-asg \
+  --scheduled-action-name scale-up-morning \
+  --recurrence "0 8 * * MON-FRI" \
+  --desired-capacity 4
+
+# Scale down after hours
+aws autoscaling put-scheduled-update-group-action \
+  --auto-scaling-group-name capstone-asg \
+  --scheduled-action-name scale-down-evening \
+  --recurrence "0 18 * * MON-FRI" \
+  --desired-capacity 2
+```
+
+### Troubleshooting
+
+**Issue**: Application not accessible
+```bash
+# Check ALB status
+aws elbv2 describe-load-balancers --names capstone-alb
+
+# Check target health
+aws elbv2 describe-target-health \
+  --target-group-arn <target-group-arn>
+
+# Check Auto Scaling Group
 aws autoscaling describe-auto-scaling-groups \
   --auto-scaling-group-names capstone-asg
-
-# Change desired capacity
-aws autoscaling set-desired-capacity \
-  --auto-scaling-group-name capstone-asg \
-  --desired-capacity 3
-
-# Trigger instance refresh
-aws autoscaling start-instance-refresh \
-  --auto-scaling-group-name capstone-asg
 ```
 
-### AWS CLI - Secrets Manager
+**Issue**: Instances failing health checks
 ```bash
-# Get secret value
-aws secretsmanager get-secret-value \
-  --secret-id capstone-db-credentials \
-  --query 'SecretString' \
-  --output text | jq '.'
-
-# Update secret
-aws secretsmanager update-secret \
-  --secret-id capstone-db-credentials \
-  --secret-string '{"username":"admin","password":"newpass123"}'
-```
-
-### Debugging Commands
-```bash
-# SSH and check logs
-ssh -i capstone-key.pem ec2-user@<ip>
-sudo cat /var/log/user-data.log
+# SSH to instance (via bastion) and check logs
 sudo tail -f /var/log/httpd/error_log
-sudo systemctl status httpd
 
-# Test database connection
-mysql -h <rds-endpoint> -u admin -p country_schema
+# Check if application files present
+ls -la /var/www/html/
 
-# Test S3 access from instance
-aws s3 ls s3://capstone-php-app-1761693785/php-app/
+# Test database connectivity
+php /var/www/html/get-parameters.php
+```
 
-# Test PHP
-curl http://localhost/test-db.php
+**Issue**: Database connection failures
+```bash
+# Verify security group rules
+aws ec2 describe-security-groups --group-ids <sg-rds-id>
+
+# Test connectivity from EC2
+telnet capstone-mysql-db.ck9uegaac4l0.us-east-1.rds.amazonaws.com 3306
+
+# Check Secrets Manager
+aws secretsmanager get-secret-value \
+  --secret-id capstone-db-credentials
+```
+
+### Destroying Infrastructure
+
+When you want to tear down all resources:
+
+```bash
+# Plan destruction
+terraform plan -destroy
+
+# Destroy all resources
+terraform destroy
+
+# Type 'yes' when prompted
+```
+
+**Note**: This will permanently delete all data including the database.
+
+---
+
+## Implementation Notes
+
+### Deployment Considerations
+
+This infrastructure was designed following AWS best practices with the standard architecture including Application Load Balancer, private subnets for compute resources, and NAT Gateway for secure internet access.
+
+**However**, during actual deployment, certain AWS account limitations were encountered (commonly seen in AWS Academy or free-tier accounts) that prevented the creation of Application Load Balancers.
+
+To work around these restrictions while maintaining the project's educational value, the code includes an alternative simplified configuration where:
+- EC2 instances are deployed in public subnets with public IP addresses
+- Direct instance access replaces load balancer distribution
+- The NAT Gateway, while created, is not actively used by the instances
+
+The complete standard architecture code remains in the project, with the simplified components clearly marked. This allows for easy transition to the full production architecture when deployed on an unrestricted AWS account.
+
+For the purpose of this documentation, the standard architecture with ALB and private subnets is described as the intended design, as it represents best practices for production deployments.
+
+### Migration Path
+
+When deploying to a production AWS account:
+
+1. Uncomment the ALB resources in main.tf
+2. Update the Web Security Group inbound rule to accept traffic from sg-alb instead of 0.0.0.0/0
+3. Modify the Auto Scaling Group to use private subnets
+4. Disable public IP assignment in the launch template
+5. Update outputs.tf to display ALB DNS instead of instance IPs
+6. Run `terraform apply` to migrate
+
+Detailed migration instructions are provided in the code comments within the respective files.
+
+---
+
+## Additional Resources
+
+- **AWS Well-Architected Framework**: https://aws.amazon.com/architecture/well-architected/
+- **Terraform AWS Provider**: https://registry.terraform.io/providers/hashicorp/aws/latest/docs
+- **AWS VPC Documentation**: https://docs.aws.amazon.com/vpc/
+- **AWS Auto Scaling Best Practices**: https://docs.aws.amazon.com/autoscaling/ec2/userguide/as-best-practices.html
+- **MySQL 8.0 Documentation**: https://dev.mysql.com/doc/refman/8.0/en/
+
+---
+
+## Project Metadata
+
+- **Version**: 1.0
+- **Last Updated**: 2025-11-06
+- **Terraform Version**: >= 1.0
+- **AWS Provider Version**: >= 5.0
+- **Region**: us-east-1
+- **License**: Educational Use
+
+---
+
+## Quick Reference
+
+```bash
+# Initialize Terraform
+terraform init
+
+# Plan infrastructure
+terraform plan
+
+# Deploy infrastructure
+terraform apply
+
+# Get outputs
+terraform output
+
+# Access application
+terraform output alb_url
+
+# Destroy infrastructure
+terraform destroy
+
+# Format Terraform code
+terraform fmt
+
+# Validate configuration
+terraform validate
+
+# Check current state
+terraform show
+
+# List all resources
+terraform state list
 ```
 
 ---
 
-## Summary
-
-This deployment guide provides a complete reference for understanding, deploying, and maintaining the Capstone Terraform infrastructure. Key takeaways:
-
-1. **Architecture is production-ready** with multi-AZ, auto-scaling, and security best practices
-2. **All resources are documented** with purpose, configuration, and relationships
-3. **Deployment is fully automated** via Terraform and user-data scripts
-4. **Costs are optimized** at ~$64/month with strategies to reduce to $18/month
-5. **Security is layered** but has room for hardening (HTTPS, restricted SSH, encryption)
-6. **Code has been cleaned** - removed unused ALB resources, simplified database section
-
-
-**Next Steps:**
-1. Consider modularizing Terraform code
-2. Apply security hardening (Section 10.2)
-3. Set up remote state for team collaboration (Appendix B)
-4. Implement CI/CD pipeline (Appendix C)
-
-For questions or issues, refer to the Troubleshooting section or AWS documentation.
-
----
-
-**Document Version:** 2.1
-**Last Updated:** November 6, 2025
-**Maintained By:** Nada EL ANNASI, Wassila ASRI, Anas EL BOUZIYANI, Ahmed LAHMADI
+**For questions, issues, or contributions, please refer to the project repository documentation.**

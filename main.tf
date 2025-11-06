@@ -205,6 +205,133 @@ resource "aws_security_group" "web" {
   }
 }
 
+# ============================================================================
+# LOAD BALANCER CONFIGURATION (COMMENTED OUT - STANDARD ARCHITECTURE)
+# ============================================================================
+# IMPORTANT: This section contains the standard architecture with Load Balancer
+# Uncomment this section to use Load Balancer with instances in private subnets
+# When enabling this, also:
+#   1. Comment out the "SIMPLIFIED ARCHITECTURE" section below
+#   2. Change launch template: associate_public_ip_address = false
+#   3. Change ASG vpc_zone_identifier to use private subnets
+#   4. Uncomment ALB outputs in outputs.tf
+# ============================================================================
+
+# # Security Group for Application Load Balancer
+# resource "aws_security_group" "alb" {
+#   name        = "capstone-alb-sg"
+#   description = "Security group for Application Load Balancer"
+#   vpc_id      = aws_vpc.main.id
+#
+#   ingress {
+#     from_port   = 80
+#     to_port     = 80
+#     protocol    = "tcp"
+#     cidr_blocks = ["0.0.0.0/0"]
+#     description = "Allow HTTP from anywhere"
+#   }
+#
+#   egress {
+#     from_port   = 0
+#     to_port     = 0
+#     protocol    = "-1"
+#     cidr_blocks = ["0.0.0.0/0"]
+#     description = "Allow all outbound traffic"
+#   }
+#
+#   tags = {
+#     Name = "capstone-alb-sg"
+#   }
+# }
+#
+# # Update Web Security Group to allow traffic from ALB only (when using ALB)
+# # Uncomment this and comment out the web security group above
+# # resource "aws_security_group" "web" {
+# #   name        = "capstone-web-sg"
+# #   description = "Security group for web servers"
+# #   vpc_id      = aws_vpc.main.id
+# #
+# #   ingress {
+# #     from_port       = 80
+# #     to_port         = 80
+# #     protocol        = "tcp"
+# #     security_groups = [aws_security_group.alb.id]
+# #     description     = "Allow HTTP from ALB only"
+# #   }
+# #
+# #   ingress {
+# #     from_port   = 22
+# #     to_port     = 22
+# #     protocol    = "tcp"
+# #     cidr_blocks = ["0.0.0.0/0"]
+# #     description = "Allow SSH from anywhere (for troubleshooting)"
+# #   }
+# #
+# #   egress {
+# #     from_port   = 0
+# #     to_port     = 0
+# #     protocol    = "-1"
+# #     cidr_blocks = ["0.0.0.0/0"]
+# #     description = "Allow all outbound traffic"
+# #   }
+# #
+# #   tags = {
+# #     Name = "capstone-web-sg"
+# #   }
+# # }
+#
+# # Application Load Balancer
+# resource "aws_lb" "main" {
+#   name               = "capstone-alb"
+#   internal           = false
+#   load_balancer_type = "application"
+#   security_groups    = [aws_security_group.alb.id]
+#   subnets            = [aws_subnet.public_1.id, aws_subnet.public_2.id]
+#
+#   tags = {
+#     Name = "capstone-alb"
+#   }
+# }
+#
+# # Target Group for Web Servers
+# resource "aws_lb_target_group" "web" {
+#   name     = "capstone-web-tg"
+#   port     = 80
+#   protocol = "HTTP"
+#   vpc_id   = aws_vpc.main.id
+#
+#   health_check {
+#     enabled             = true
+#     healthy_threshold   = 2
+#     unhealthy_threshold = 2
+#     timeout             = 5
+#     interval            = 30
+#     path                = "/"
+#     protocol            = "HTTP"
+#     matcher             = "200"
+#   }
+#
+#   tags = {
+#     Name = "capstone-web-tg"
+#   }
+# }
+#
+# # ALB Listener
+# resource "aws_lb_listener" "http" {
+#   load_balancer_arn = aws_lb.main.arn
+#   port              = "80"
+#   protocol          = "HTTP"
+#
+#   default_action {
+#     type             = "forward"
+#     target_group_arn = aws_lb_target_group.web.arn
+#   }
+# }
+
+# ============================================================================
+# END OF LOAD BALANCER CONFIGURATION
+# ============================================================================
+
 # Security Group for RDS
 resource "aws_security_group" "rds" {
   name        = "capstone-rds-sg"
@@ -384,7 +511,7 @@ resource "aws_launch_template" "web" {
   }
 
   network_interfaces {
-    associate_public_ip_address = true
+    associate_public_ip_address = true  # SIMPLIFIED: true for public subnet access | STANDARD: false for private subnets with ALB
     device_index                = 0
     security_groups             = [aws_security_group.web.id]
     delete_on_termination       = true
@@ -404,14 +531,20 @@ resource "aws_launch_template" "web" {
 }
 
 # Auto Scaling Group
+# ============================================================================
+# SIMPLIFIED ARCHITECTURE (ACTIVE) - Public Subnets, No Load Balancer
+# ============================================================================
 resource "aws_autoscaling_group" "web" {
   name                      = "capstone-asg"
-  vpc_zone_identifier       = [aws_subnet.public_1.id, aws_subnet.public_2.id]
-  health_check_type         = "EC2"
+  vpc_zone_identifier       = [aws_subnet.public_1.id, aws_subnet.public_2.id]  # SIMPLIFIED: Public subnets
+  health_check_type         = "EC2"  # SIMPLIFIED: EC2 health check (use "ELB" with Load Balancer)
   health_check_grace_period = 400
   min_size                  = var.asg_min_size
   max_size                  = var.asg_max_size
   desired_capacity          = var.asg_desired_capacity
+
+  # STANDARD ARCHITECTURE: Uncomment this when using Load Balancer
+  # target_group_arns = [aws_lb_target_group.web.arn]
 
   launch_template {
     id      = aws_launch_template.web.id
@@ -424,6 +557,13 @@ resource "aws_autoscaling_group" "web" {
     propagate_at_launch = true
   }
 }
+
+# ============================================================================
+# STANDARD ARCHITECTURE: Uncomment these lines when using Load Balancer
+# Also change health_check_type above from "EC2" to "ELB"
+# Also change vpc_zone_identifier above to use private subnets:
+#   vpc_zone_identifier = [aws_subnet.private_1.id, aws_subnet.private_2.id]
+# ============================================================================
 
 # Auto Scaling Policy - Target Tracking
 resource "aws_autoscaling_policy" "cpu_target_tracking" {

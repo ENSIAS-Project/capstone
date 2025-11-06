@@ -1,20 +1,34 @@
+# ============================================================================
+# STANDARD ARCHITECTURE OUTPUTS (Load Balancer) - COMMENTED OUT
+# ============================================================================
+# Uncomment these outputs when using Application Load Balancer
+# These provide the ALB DNS name and URL for accessing the application
+# ============================================================================
+
 # output "alb_dns_name" {
 #   description = "DNS name of the Application Load Balancer"
 #   value       = aws_lb.main.dns_name
 # }
-
+#
 # output "alb_url" {
-#   description = "URL to access the web application"
+#   description = "URL to access the web application via Load Balancer"
 #   value       = "http://${aws_lb.main.dns_name}"
 # }
 
+# ============================================================================
+# SIMPLIFIED ARCHITECTURE OUTPUTS (Direct Instance Access) - ACTIVE
+# ============================================================================
+# These outputs are used when instances are in public subnets with public IPs
+# Comment these out when using Load Balancer architecture
+# ============================================================================
+
 output "instance_public_ips" {
-  description = "Public IP addresses of running instances"
+  description = "Public IP addresses of running instances (SIMPLIFIED architecture only)"
   value       = data.aws_instances.web_servers.public_ips
 }
 
 output "instance_public_urls" {
-  description = "Public URLs to access the web application (for DAST scanning)"
+  description = "Public URLs to access the web application directly (for DAST scanning)"
   value       = [for ip in data.aws_instances.web_servers.public_ips : "http://${ip}"]
 }
 

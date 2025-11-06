@@ -46,7 +46,9 @@
       "Bash(aws iam list-roles:*)",
       "Bash(terraform import:*)",
       "Bash(aws iam get-role-policy:*)",
-      "Bash(aws s3:*)"
+      "Bash(aws s3:*)",
+      "Bash(aws secretsmanager list-secrets:*)",
+      "Bash(aws elbv2 create-load-balancer:*)"
     ],
     "deny": [],
     "ask": []

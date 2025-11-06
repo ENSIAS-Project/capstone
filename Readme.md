@@ -1,10 +1,11 @@
-# Complete Deployment Guide - AWS Capstone Terraform Infrastructure
+# Complete Guide - AWS Capstone Terraform Infrastructure
 
 **Version:** 2.1
 **Last Updated:** November 6, 2025
 **Author:** Terraform-managed AWS Infrastructure
 
 ---
+
 
 ## Table of Contents
 

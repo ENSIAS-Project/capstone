@@ -29,7 +29,6 @@
         curl_setopt( $ch, CURLOPT_HTTPHEADER, $headers );
         curl_setopt( $ch, CURLOPT_RETURNTRANSFER, true );
         curl_setopt( $ch, CURLOPT_CUSTOMREQUEST, "GET" );
-        $result = curl_exec( $ch );
         $az = curl_exec( $ch );
         
         #echo "<p> RESULT :" . $result;
@@ -41,31 +40,20 @@
           'version' => 'latest',
           'region'  => $region
         ]);
-        #fetch the endpoint ep
-        $rds_client = new  Aws\Rds\RdsClient([
-          'version' => 'latest',
-          'region'  => $region
-        ]);
-        $dbresult = $rds_client->describeDBInstances();
-        $dbresult = $dbresult['DBInstances'][0]['Endpoint']['Address'];
-        $ep = $dbresult;
-        #echo $ep;
-        #
-        #fetch secrets for the endpoint
+
+        # Fetch secrets which includes the endpoint
         # Using our specific secret name instead of searching
           $result = $secrets_client->getSecretValue([
             'SecretId' => 'capstone-db-credentials',
         ]);
         $result = $result['SecretString'];
         $result = json_decode($result, true);
-  #      echo $result;
 
-        #$result = $result['SecretString'];
-   #     print($result);
-        #$result = json_decode($result, true);
+        # Get all values from the secret
+        $ep = $result['host'];
         $un = $result['username'];
         $pw = $result['password'];
-        $db = 'country_schema';
+        $db = $result['dbname'];
 
         }
         catch (Exception $e) {

@@ -37,7 +37,16 @@
       "WebFetch(domain:medium.com)",
       "WebSearch",
       "Bash(git log:*)",
-      "Bash(terraform init:*)"
+      "Bash(terraform init:*)",
+      "Bash(terraform state list:*)",
+      "Bash(aws rds describe-db-instances:*)",
+      "Bash(aws autoscaling delete-auto-scaling-group:*)",
+      "Bash(aws rds delete-db-instance:*)",
+      "Bash(aws iam list-instance-profiles:*)",
+      "Bash(aws iam list-roles:*)",
+      "Bash(terraform import:*)",
+      "Bash(aws iam get-role-policy:*)",
+      "Bash(aws s3:*)"
     ],
     "deny": [],
     "ask": []
